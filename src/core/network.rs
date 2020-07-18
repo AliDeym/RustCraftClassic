@@ -20,8 +20,8 @@
     SOFTWARE.
 */
 
-use std::io::{self, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::io::{self, Read};
+use std::net::{TcpListener, TcpStream, Shutdown};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
@@ -30,102 +30,11 @@ use threadpool::ThreadPool;
 
 
 use super::super::network::*;
-use super::{Core, NetworkPlayer, PlayerList};
+use super::{Core, NetworkPlayer, PlayerList, BufferReader};
 
 const HOSTNAME: &str = "0.0.0.0";
 const TIMEOUT_TIME: u64 = 30; // in Seconds.
 
-
-pub struct BufferWriter {
-    buffer: Vec<u8>
-}
-
-impl BufferWriter {
-    pub fn new(size: usize) -> BufferWriter {
-        BufferWriter {
-            buffer: Vec::<u8>::with_capacity(size)
-        }
-    }
-
-    pub fn get_data(&self) -> &Vec<u8> {
-        &self.buffer
-    }
-
-    pub fn write_byte(&mut self, data: u8) {
-        self.buffer.push(data);
-    }
-
-    pub fn write_sbyte(&mut self, data: i8) {
-        self.buffer.push(data as u8);
-    }
-
-    pub fn write_short(&mut self, data: u16) {
-        let bytes = data.to_be_bytes();
-
-        self.buffer.extend(&bytes[..]);
-    }
-
-    pub fn write_string(&mut self, data: &str) {
-        let mut char_iter = data.as_bytes().iter();
-
-        for _ in 0..64 {
-            self.buffer.push(*char_iter.next().unwrap_or(&b' ') as u8);
-        }
-    }
-
-    pub fn write_array(&mut self, data: &Vec<u8>) {
-        if data.len() > 1024 {
-            self.buffer.extend(data.split_at(1024).0);
-
-            return;
-        }
-
-        self.buffer.extend(data);
-    }
-}
-
-
-pub struct BufferReader<'a> {
-    index: usize,
-    buffer: &'a Vec<u8>,
-}
-
-
-impl<'a> BufferReader<'a> {
-    pub fn new(buffer: &'a Vec<u8>) -> BufferReader {
-        BufferReader { index: 0, buffer }
-    }
-
-    pub fn read_byte(&mut self) -> u8 {
-        self.index += 1;
-
-        *self.buffer.get(self.index - 1).unwrap_or(&0)
-    }
-
-    pub fn read_sbyte(&mut self) -> i8 {
-        self.index += 1;
-
-        *self.buffer.get(self.index - 1).unwrap_or(&0) as i8
-    }
-
-    pub fn read_ushort(&mut self) -> u16 {
-        self.index += 2;
-
-        let b1 = self.read_byte();
-        let b2 = self.read_byte();
-        
-        (b1 as u16) << 8 | b2 as u16
-    }
-
-    pub fn read_string(&mut self) -> String {
-        let grabbed = String::from_utf8(self.buffer[self.index..self.index + 64].to_vec())
-            .unwrap_or(String::from(""));
-
-        self.index += 64;
-
-        String::from(grabbed.trim())
-    }
-}
 
 pub struct Network {
     listener: TcpListener,
@@ -187,7 +96,11 @@ impl Network {
                                             if size <= 0 {
                                                 // Connection has been closed.
                                                 // Inform the core of player's disconnecction so the proper action can be taken.
+                                                // TODO: Send a disconnect packet to core, with sender ID 0 (console). (Dispose NEEDED!)
+                                                Core::static_log(&format!("Player with uid \"{}\" disconnected.", uid_copy));
                                                 
+                                                
+                                                receiver.shutdown(Shutdown::Both).ok();
 
                                                 break;
                                             }
@@ -209,6 +122,7 @@ impl Network {
                                             buffer_reader.read_byte();
 
                                             // Handle receiving packets here, and send objects to core.
+                                            // TODO: match should return a packet, send must be done outside the match.
                                             match *op_code {
                                                 PlayerIdentification::ID => {
 
@@ -236,7 +150,7 @@ impl Network {
                                     }
                                 }
                             });
-
+                            // TODO: Let the core edit players. Insertion should be move into core, not network.
                             let spawned_player = NetworkPlayer::new(uid_copy, stream);
                             players.insert(uid_copy, Box::new(spawned_player));
                         }

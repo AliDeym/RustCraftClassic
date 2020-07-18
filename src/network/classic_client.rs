@@ -20,7 +20,7 @@
     SOFTWARE.
 */
 
-use super::super::core::{BufferReader, Core};
+use super::super::core::{BufferReader, Core, TestMap, Map, Vec3D};
 use super::*;
 
 pub struct PlayerIdentification {
@@ -91,12 +91,13 @@ impl NetworkPacket for PlayerIdentification {
             // TODO: Send CPE packets.
 
             let identify_packet = Box::new(ServerIdentification::new(
-                0x07, String::from("Test"), String::from("A Rust server!"), 0x00
+                0x07, String::from("Test"), String::from("A Rust server! +hax"), 0x00
             ));
 
             player.handle_packet(identify_packet);
 
-            core.send_map(player.value_mut(), "any.dat");
+            let map = Box::new(TestMap::new(Vec3D::new(32, 32, 32)));
+            core.send_map(player.value_mut(), map);
 
             Core::static_log(&format!("Player instantiated: {}", player.get_display_name()));
         } // TODO: Handle case where player is not found or not instantiated.

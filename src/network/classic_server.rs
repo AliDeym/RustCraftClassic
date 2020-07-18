@@ -122,3 +122,37 @@ impl NetworkPacket for LevelDataChunk {
         buffer.write_byte(self.percent_complete);
     }
 }
+
+pub struct LevelFinalize {
+    xsize: u16,
+    ysize: u16,
+    zsize: u16
+}
+
+impl LevelFinalize {
+    pub const ID: u8 = 0x04;
+    pub const SIZE: usize = 7;
+
+    pub fn new(xsize: u16, ysize: u16, zsize: u16) -> LevelFinalize {
+        LevelFinalize {
+            xsize, ysize, zsize
+        }
+    }
+}
+
+impl NetworkPacket for LevelFinalize {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_short(self.xsize);
+
+        buffer.write_short(self.ysize);
+
+        buffer.write_short(self.zsize);
+    }
+}

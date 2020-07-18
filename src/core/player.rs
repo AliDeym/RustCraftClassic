@@ -54,6 +54,7 @@ pub struct NetworkPlayer {
 }
 
 impl NetworkPlayer {
+    /// Creates a network based player.
     pub fn new(uid: usize, stream: TcpStream) -> NetworkPlayer {
         let default_name = String::from("Uninitialized Player");
 
@@ -124,7 +125,7 @@ impl Player for NetworkPlayer {
 
         if let Ok(sent_bytes) = self.stream.write(buffer.get_data()) {
             // TODO: Check writing and error of packet sending.
-            Core::static_log(&format!("Sent \"{}\" bytes.", sent_bytes));
+            Core::static_log(&format!("Sent Packet ID \"{}\", \"{}\" bytes.", packet.get_id(), sent_bytes));
         }
     }
 }

@@ -20,10 +20,10 @@
     SOFTWARE.
 */
 
-pub mod classic_client;
-pub mod classic_server;
-pub mod cpe;
-pub mod packet;
+mod classic_client;
+mod classic_server;
+mod cpe;
+mod packet;
 
 
 pub use self::classic_client::*;

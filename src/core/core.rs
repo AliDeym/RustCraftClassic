@@ -20,15 +20,22 @@
     SOFTWARE.
 */
 
-use std::sync::{Arc, mpsc::{channel, Receiver, Sender}};
+use std::io::prelude::*;
+
+use std::sync::{
+    mpsc::{channel, Receiver, Sender},
+    Arc,
+};
 use std::thread;
 
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use num_cpus;
 
-use super::super::network::{NetworkPacket, LevelInitialize, LevelDataChunk};
-use super::{Console, Network, Player};
+use super::super::network::*;
+use super::{Console, Map, Network, Player};
 
 pub type PlayerList = Arc<DashMap<usize, Box<dyn Player + Send + Sync>>>;
 
@@ -43,6 +50,7 @@ pub struct Core {
 
 impl Core {
     /// Creates a new rcclassic Core with number of threads to handle player connections.
+    /// 'threadsize' can be left 0 to use the the physical core count.
     pub fn new(mut threadsize: usize) -> Core {
         if threadsize <= 0 {
             threadsize = num_cpus::get_physical();
@@ -66,10 +74,12 @@ impl Core {
 
     /// Logs into the standard output as well as log file, without a core instance.
     pub fn static_log(message: &str) -> String {
+        // TODO: Insert time using chrono.
         let log = format!("[{}] {}", "TIME-HERE", message);
 
         println!("{}", &log);
 
+        // TODO: Log into a log file.
         log
     }
 
@@ -132,6 +142,7 @@ impl Core {
         self.tx.clone().unwrap()
     }
 
+    /// Returns a player reference by uid. UID 0 can be used to get 'Console'.
     pub fn get_player_by_uid<'core>(
         &'core self,
         uid: usize,
@@ -143,6 +154,7 @@ impl Core {
         }
     }
 
+    /// Returns a mutable player reference by uid. UID 0 can be used to get 'Console'.
     pub fn get_player_by_uid_mut<'core>(
         &'core self,
         uid: usize,
@@ -154,22 +166,45 @@ impl Core {
         }
     }
 
-    pub fn send_map(&self, player: &mut Box<dyn Player + Send + Sync>, map: &str) {
+    pub fn send_map(&self, player: &mut Box<dyn Player + Send + Sync>, map: Box<dyn Map>) {
         // TODO: Send actual map.
-        let mut data1 = Vec::<u8>::new();
+        let mut gz = GzEncoder::new(Vec::new(), Compression::default());
 
-        for x in 0..2048 {
-            data1.push(0x00);
-        }
-        // Test packet.
+        // TODO: Handle both write_all and finish results efficiently.
+        let size = &(map.get_chunks().len() as u32).to_be_bytes();
+        gz.write_all(size).unwrap();
+        gz.write_all(map.get_chunks()).unwrap();
+        let gz_data = gz.finish().unwrap();
 
-        let data2 = data1.split_off(1024);
-        
         player.handle_packet(Box::new(LevelInitialize::new()));
-        player.handle_packet(Box::new(LevelDataChunk::new(1024, data1, 20)));
-        player.handle_packet(Box::new(LevelDataChunk::new(1024, data2, 20)));
+
+        let chunks = gz_data.chunks(1024);
+        let total_chunks = chunks.len();
+
+        for (i, chunk) in chunks.enumerate() {
+            let mut chunk_data = chunk.to_vec();
+
+            if chunk.len() < 1024 {
+                for _ in chunk.len()..1024 {
+                    chunk_data.push(0x0);
+                }
+            }
+
+            player.handle_packet(Box::new(LevelDataChunk::new(
+                chunk.len() as u16,
+                chunk_data,
+                (i / total_chunks * 100) as u8,
+            )));
+        }
+
+        player.handle_packet(Box::new(LevelFinalize::new(
+            map.get_size().get_x(),
+            map.get_size().get_y(),
+            map.get_size().get_z(),
+        )));
     }
 
+    /// Starts a thread which listens for incoming connections.
     pub fn network_listen(&mut self) {
         let core_tx = self.sender_take();
         let players_arc = self.players.clone();
@@ -183,13 +218,13 @@ impl Core {
         });
     }
 
-    /// Listens for network connection.
+    /// Listens for network packets over the memory channel.
     pub fn handle_received_packets(&mut self) {
         let receiver = self.receiver_take();
 
         for message in receiver {
             self.log(&format!("Received a packet with id: {}", message.get_id()));
-            
+
             message.handle_receive(self);
         }
 

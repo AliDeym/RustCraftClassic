@@ -21,12 +21,16 @@
 */
 
 mod core;
+mod map;
 mod network;
 mod player;
+mod util;
 
 pub use self::core::*;
+pub use self::map::*;
 pub use self::network::*;
 pub use self::player::*;
+pub use self::util::*;
 
 #[cfg(test)]
 mod test_core {
