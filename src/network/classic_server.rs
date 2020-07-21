@@ -20,7 +20,7 @@
     SOFTWARE.
 */
 
-use super::super::core::BufferWriter;
+use super::super::core::{BufferWriter, Vec3D, Transform};
 use super::NetworkPacket;
 
 pub struct ServerIdentification {
@@ -124,19 +124,15 @@ impl NetworkPacket for LevelDataChunk {
 }
 
 pub struct LevelFinalize {
-    xsize: u16,
-    ysize: u16,
-    zsize: u16
+    size: Vec3D
 }
 
 impl LevelFinalize {
     pub const ID: u8 = 0x04;
     pub const SIZE: usize = 7;
 
-    pub fn new(xsize: u16, ysize: u16, zsize: u16) -> LevelFinalize {
-        LevelFinalize {
-            xsize, ysize, zsize
-        }
+    pub fn new(size: Vec3D) -> LevelFinalize {
+        LevelFinalize { size }
     }
 }
 
@@ -149,10 +145,79 @@ impl NetworkPacket for LevelFinalize {
     }
 
     fn handle_send(&self, buffer: &mut BufferWriter) {
-        buffer.write_short(self.xsize);
+        buffer.write_short(self.size.get_x());
 
-        buffer.write_short(self.ysize);
+        buffer.write_short(self.size.get_y());
 
-        buffer.write_short(self.zsize);
+        buffer.write_short(self.size.get_z());
+    }
+}
+
+pub struct ServerSetBlock {
+    position: Vec3D,
+    block: u8,
+}
+
+impl ServerSetBlock {
+    pub const ID: u8 = 0x06;
+    pub const SIZE: usize = 8;
+
+    pub fn new(position: Vec3D, block: u8) -> ServerSetBlock {
+        ServerSetBlock { position, block }
+    }
+}
+
+impl NetworkPacket for ServerSetBlock {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_short(self.position.get_x());
+
+        buffer.write_short(self.position.get_y());
+
+        buffer.write_short(self.position.get_z());
+
+        buffer.write_byte(self.block);
+    }
+}
+
+pub struct SpawnPlayer {
+    player_id: i8,
+    player_name: String,
+    transform: Transform,
+}
+
+impl SpawnPlayer {
+    pub const ID: u8 = 0x07;
+    pub const SIZE: usize = 74;
+
+    pub fn new(player_id: i8, player_name: String, transform: Transform) -> SpawnPlayer {
+        SpawnPlayer {
+            player_id, 
+            player_name,
+            transform
+        }
+    }
+}
+
+impl NetworkPacket for SpawnPlayer {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_sbyte(self.player_id);
+
+        buffer.write_string(&self.player_name);
+
+        buffer.write_transform(&self.transform);
     }
 }

@@ -127,7 +127,7 @@ impl Network {
                                                 PlayerIdentification::ID => {
 
                                                     let identify_packet =
-                                                        PlayerIdentification::from(
+                                                        PlayerIdentification::new(
                                                             &mut buffer_reader,
                                                             player_uid,
                                                         );
@@ -135,6 +135,15 @@ impl Network {
                                                     
 
                                                     tx.send(Box::new(identify_packet)).unwrap();
+                                                },
+                                                PlayerSetBlock::ID => {
+                                                    let setblock_packet = PlayerSetBlock::new(&mut buffer_reader, player_uid);
+
+                                                    tx.send(Box::new(setblock_packet)).unwrap();
+                                                },
+                                                PlayerPositionAndOrientation::ID => {
+                                                    let packet = PlayerPositionAndOrientation::new(&mut buffer_reader, player_uid);
+                                                    tx.send(Box::new(packet)).unwrap();
                                                 }
                                                 _ => {}
                                             }

@@ -1,6 +1,6 @@
 [package]
 name = "rcclassic"
-version = "0.1.31"
+version = "0.1.32"
 authors = ["Ali Deym <self@deym.dev>"]
 edition = "2018"
 

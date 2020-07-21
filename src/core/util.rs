@@ -20,9 +20,16 @@
     SOFTWARE.
 */
 
-pub struct Vec3D<T=u16> (pub T, pub T, pub T) where T: Copy, T: Sized;
+pub struct Vec3D<T=u16> (pub T, pub T, pub T) where T: Copy, T: Sized, T: Clone;
 
-impl<T> Vec3D<T> where T: Copy, T: Sized {
+impl Clone for Vec3D {
+    fn clone(&self) -> Self {
+        Self (self.0, self.1, self.2)
+    }
+}
+impl Copy for Vec3D {}
+
+impl<T> Vec3D<T> where T: Copy, T: Sized, T: Clone {
     pub fn new(x: T, y: T, z: T) -> Vec3D<T> {
         Vec3D { 0: x, 1: y, 2: z }
     }
@@ -49,6 +56,58 @@ impl<T> Vec3D<T> where T: Copy, T: Sized {
 
     pub fn set_z(&mut self, z: T) {
         self.2 = z;
+    }
+}
+
+pub struct Transform {
+    position: Vec3D,
+    yaw: u8,
+    pitch: u8
+}
+
+impl Clone for Transform {
+    fn clone(&self) -> Self {
+        Self::new(self.position, self.yaw, self.pitch)
+    }
+}
+
+impl Transform {
+    pub fn new(position: Vec3D, yaw: u8, pitch: u8) -> Transform {
+        Transform {
+            position,
+            yaw,
+            pitch
+        }
+    }
+
+    pub fn default() -> Transform {
+        Self::new(Vec3D::new(0, 0, 0), 0, 0)
+    }
+
+    pub fn get_pos(&self) -> &Vec3D {
+        &self.position
+    }
+
+    pub fn get_yaw(&self) -> u8 {
+        self.yaw
+    }
+
+    pub fn get_pitch(&self) -> u8 {
+        self.pitch
+    }
+
+    pub fn set_pos(&mut self, x: u16, y: u16, z: u16) {
+        self.position.0 = x;
+        self.position.1 = y;
+        self.position.2 = z;
+    }
+
+    pub fn set_yaw(&mut self, yaw: u8) {
+        self.yaw = yaw;
+    }
+
+    pub fn set_pitch(&mut self, pitch: u8) {
+        self.pitch = pitch;
     }
 }
 
@@ -101,6 +160,19 @@ impl BufferWriter {
         }
     }
 
+    pub fn write_vec3d(&mut self, data: &Vec3D) {
+        self.write_short(data.0);
+        self.write_short(data.1);
+        self.write_short(data.2);
+    }
+
+    pub fn write_transform(&mut self, data: &Transform) {
+        self.write_vec3d(data.get_pos());
+
+        self.write_byte(data.yaw);
+        self.write_byte(data.pitch);
+    }
+
     pub fn write_array(&mut self, data: &[u8]) {
         if data.len() > 1024 {
             self.buffer.extend(data.split_at(1024).0);
@@ -135,11 +207,9 @@ impl<'a> BufferReader<'a> {
     }
 
     pub fn read_ushort(&mut self) -> u16 {
-        self.index += 2;
-
         let b1 = self.read_byte();
         let b2 = self.read_byte();
-
+        
         (b1 as u16) << 8 | b2 as u16
     }
 

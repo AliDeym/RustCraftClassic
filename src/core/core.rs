@@ -35,14 +35,16 @@ use flate2::Compression;
 use num_cpus;
 
 use super::super::network::*;
-use super::{Console, Map, Network, Player};
+use super::{Console, Network, Player, MemoryMap, Vec3D, World, Transform};
 
 pub type PlayerList = Arc<DashMap<usize, Box<dyn Player + Send + Sync>>>;
+pub type WorldList = Arc<DashMap<String, World>>;
 
 pub struct Core {
     pub threadsize: usize,
 
     players: PlayerList,
+    worlds: WorldList,
 
     tx: Option<Sender<Box<dyn NetworkPacket + Send>>>,
     rx: Option<Receiver<Box<dyn NetworkPacket + Send>>>,
@@ -62,10 +64,21 @@ impl Core {
 
         (*players).insert(0, Box::new(Console::new()));
 
+        let worlds: WorldList = Arc::new(DashMap::new());
+
+        (*worlds).insert(
+            String::from("main"),
+            World::new(
+                String::from("main"),
+                Box::new(MemoryMap::new(Vec3D::new(64, 16, 64))),
+            ),
+        );
+
         Core {
             threadsize,
 
             players,
+            worlds,
 
             tx: None,
             rx: None,
@@ -142,6 +155,7 @@ impl Core {
         self.tx.clone().unwrap()
     }
 
+    // TODO: Change player by_uid to get_player
     /// Returns a player reference by uid. UID 0 can be used to get 'Console'.
     pub fn get_player_by_uid<'core>(
         &'core self,
@@ -154,6 +168,7 @@ impl Core {
         }
     }
 
+    // TODO: Change player by_uid to get_player
     /// Returns a mutable player reference by uid. UID 0 can be used to get 'Console'.
     pub fn get_player_by_uid_mut<'core>(
         &'core self,
@@ -166,8 +181,35 @@ impl Core {
         }
     }
 
-    pub fn send_map(&self, player: &mut Box<dyn Player + Send + Sync>, map: Box<dyn Map>) {
+    pub fn get_world<'core>(&'core self, name: &str) -> Option<Ref<'_, String, World>> {
+        if self.worlds.contains_key(name) {
+            self.worlds.get(name)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_world_mut<'core>(&'core self, name: &str) -> Option<RefMut<'_, String, World>> {
+        if self.worlds.contains_key(name) {
+            self.worlds.get_mut(name)
+        } else {
+            None
+        }
+    }
+
+    pub fn send_map(&self, player: &mut Box<dyn Player + Send + Sync>, map: &mut World) {
+        if let Some(mut current_world) = self.get_world_mut(player.get_world()) {
+            current_world.remove_player(player.get_uid());
+
+            for players in current_world.get_players() {
+                // TODO: Send entity remove packet to existing players.
+            }
+        }
+
         // TODO: Send actual map.
+        map.add_player(player.get_uid());
+        player.set_world(map.get_name());
+
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
 
         // TODO: Handle both write_all and finish results efficiently.
@@ -198,10 +240,13 @@ impl Core {
         }
 
         player.handle_packet(Box::new(LevelFinalize::new(
-            map.get_size().get_x(),
-            map.get_size().get_y(),
-            map.get_size().get_z(),
+            *map.get_size()
         )));
+
+        // TODO: Set spawn points for player, as well as send entity creation to players in world.
+        let transform = Transform::new(map.get_spawnarea(), 90, 0);
+        let name = String::from(player.get_display_name());
+        player.handle_packet(Box::new(SpawnPlayer::new(-1, name, transform)));
     }
 
     /// Starts a thread which listens for incoming connections.
@@ -228,6 +273,6 @@ impl Core {
             message.handle_receive(self);
         }
 
-        panic!(self.log("Receiving memory has stopped unexpectedly."));
+        panic!(self.log("FATAL ERROR: Receiving memory has stopped unexpectedly."));
     }
 }

@@ -20,12 +20,11 @@
     SOFTWARE.
 */
 
-
-use std::net::TcpStream;
 use std::io::Write;
+use std::net::TcpStream;
 
-use super::{BufferWriter, Core};
 use super::super::network::NetworkPacket;
+use super::{BufferWriter, Core, Transform, Vec3D};
 
 pub trait Player {
     fn set_uid(&mut self, id: usize);
@@ -36,6 +35,15 @@ pub trait Player {
 
     fn set_display_name(&mut self, _name: &str) {}
     fn get_display_name(&self) -> &str;
+
+    fn set_world(&mut self, map: &str) {}
+    fn get_world(&self) -> &str {
+        "main"
+    }
+
+    fn get_transform(&self) -> &Transform;
+    fn get_transform_mut(&mut self) -> &mut Transform;
+
 
     fn is_console(&self) -> bool {
         false
@@ -49,8 +57,13 @@ pub trait Player {
 pub struct NetworkPlayer {
     uid: usize,
     stream: TcpStream,
+
     username: String,
     nickname: String,
+
+    world: String,
+
+    transform: Transform,
 }
 
 impl NetworkPlayer {
@@ -63,6 +76,9 @@ impl NetworkPlayer {
             stream,
             nickname: default_name.clone(),
             username: default_name,
+            world: String::from(""),
+
+            transform: Transform::default()
         }
     }
 
@@ -95,6 +111,14 @@ impl Player for NetworkPlayer {
         self.uid
     }
 
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+
     fn set_name(&mut self, name: &str) {
         self.username = String::from(name);
     }
@@ -107,6 +131,14 @@ impl Player for NetworkPlayer {
     }
     fn get_display_name(&self) -> &str {
         &self.nickname
+    }
+
+    fn get_world(&self) -> &str {
+        &self.world
+    }
+
+    fn set_world(&mut self, map: &str) {
+        self.world = String::from(map);
     }
 
     fn kill(&mut self) {
@@ -125,20 +157,36 @@ impl Player for NetworkPlayer {
 
         if let Ok(sent_bytes) = self.stream.write(buffer.get_data()) {
             // TODO: Check writing and error of packet sending.
-            Core::static_log(&format!("Sent Packet ID \"{}\", \"{}\" bytes.", packet.get_id(), sent_bytes));
+            Core::static_log(&format!(
+                "Sent Packet ID \"{}\", \"{}\" bytes.",
+                packet.get_id(),
+                sent_bytes
+            ));
         }
     }
 }
 
-pub struct Console {}
+pub struct Console {
+    // A position is needed for transform method, which does nothing actually though.
+    transform: Transform
+}
 
 impl Console {
     pub fn new() -> Console {
-        Console {}
+        Console {
+            transform: Transform::default()
+        }
     }
 }
 
 impl Player for Console {
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+    
     fn set_uid(&mut self, _id: usize) {}
     fn get_uid(&self) -> usize {
         0

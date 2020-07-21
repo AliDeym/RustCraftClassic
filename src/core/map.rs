@@ -41,17 +41,31 @@ pub trait Map {
     fn set_block(&mut self, position: &Vec3D, block: u8);
 }
 
-pub struct TestMap {
+pub struct MemoryMap {
     size: Vec3D,
     data: Vec<u8>
 }
 
-impl TestMap {
-    pub fn new(size: Vec3D) -> TestMap {
-        TestMap {
-            data: vec![0x0; (size.get_x() * size.get_y() * size.get_z()) as usize],
+impl MemoryMap {
+    pub fn new(size: Vec3D) -> MemoryMap {
+        let Vec3D (w, d, h) = size;
+
+        let map = vec![0x0; w as usize * d as usize * h as usize];
+        // Testing a map with a layer of grass.
+        // Note that currently using set_block only is very costly for CPU.
+        // A function is needed to change or set multiple blocks quickly and efficiently.
+        let mut returning_map = MemoryMap {
+            data: map,
             size,
+        };
+        
+        for x in 0..w {
+            for y in 0..h {
+                returning_map.set_block(&Vec3D::new(x, d / 2 - 1, y), 2);
+            }
         }
+
+        returning_map
     }
 
     pub fn get_data_index(&self, position: &Vec3D) -> usize {
@@ -61,7 +75,7 @@ impl TestMap {
     }
 }
 
-impl Map for TestMap {
+impl Map for MemoryMap {
     fn get_size(&self) -> &Vec3D {
         &self.size
     }
