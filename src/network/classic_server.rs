@@ -221,3 +221,36 @@ impl NetworkPacket for SpawnPlayer {
         buffer.write_transform(&self.transform);
     }
 }
+
+
+pub struct ServerPositionAndOrientation {
+    player_id: i8,
+    transform: Transform
+}
+
+impl ServerPositionAndOrientation {
+    pub const ID: u8 = 0x08;
+    pub const SIZE: usize = 10;
+
+    pub fn new(player_id: i8, transform: Transform) -> ServerPositionAndOrientation {
+        ServerPositionAndOrientation {
+            player_id,
+            transform
+        }
+    }
+}
+
+impl NetworkPacket for ServerPositionAndOrientation {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_sbyte(self.player_id);
+
+        buffer.write_transform(&self.transform);
+    }
+}

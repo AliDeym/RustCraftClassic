@@ -75,14 +75,18 @@ impl Network {
                         Ok(mut receiver) => {
                             let players = players_arc.clone();
 
-                            // POSSIBLE BUG: UID exceeds usize limit after a certain amount of time.
-                            let player_uid = (*players).iter().last().map_or(1, |x| {
-                                if *x.key() >= std::usize::MAX - 1 {
-                                    1
-                                } else {
-                                    (*x.key()) + 1
+                            let mut found_id = 0;
+                            'search: for _ in 1..(std::i8::MAX) as usize -1 {
+                                found_id += 1;
+
+                                if players.contains_key(&(found_id as usize)) {
+                                    continue;
                                 }
-                            });
+
+                                break 'search;
+                            }
+
+                            let player_uid = found_id;
                             let uid_copy = player_uid.clone();
 
                             let tx = core_tx.clone();

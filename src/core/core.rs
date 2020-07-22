@@ -197,7 +197,7 @@ impl Core {
         }
     }
 
-    pub fn send_map(&self, player: &mut Box<dyn Player + Send + Sync>, map: &mut World) {
+    pub fn send_map(&self, mut player: RefMut<'_, usize, Box<dyn Player + Send + Sync>>, map: &mut World) {
         if let Some(mut current_world) = self.get_world_mut(player.get_world()) {
             current_world.remove_player(player.get_uid());
 
@@ -244,9 +244,24 @@ impl Core {
         )));
 
         // TODO: Set spawn points for player, as well as send entity creation to players in world.
-        let transform = Transform::new(map.get_spawnarea(), 90, 0);
+        let transform = Transform::new(map.get_spawnarea(), 255, 0);
         let name = String::from(player.get_display_name());
-        player.handle_packet(Box::new(SpawnPlayer::new(-1, name, transform)));
+        let uid = player.get_uid();
+
+        // Sending spawn area.
+        player.handle_packet(Box::new(SpawnPlayer::new(-1, name.clone(), transform.clone())));
+        //drop(player); // Dropping to stop deadlocks because we want to iterate through the list.
+        for pid in map.get_players() {
+            if *pid != uid {
+                if let Some(mut other) = self.get_player_by_uid_mut(*pid) {
+                    // Let other players know about the joining player.
+                    other.handle_packet(Box::new(SpawnPlayer::new(uid as i8, name.clone(), transform.clone())));
+
+                    // Let the joining player now about the other(s).
+                    player.handle_packet(Box::new(SpawnPlayer::new(other.get_uid() as i8, String::from(other.get_display_name()), transform.clone())));
+                }
+            }
+        }
     }
 
     /// Starts a thread which listens for incoming connections.
@@ -268,7 +283,7 @@ impl Core {
         let receiver = self.receiver_take();
 
         for message in receiver {
-            self.log(&format!("Received a packet with id: {}", message.get_id()));
+            //self.log(&format!("Received a packet with id: {}", message.get_id()));
 
             message.handle_receive(self);
         }

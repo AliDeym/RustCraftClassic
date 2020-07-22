@@ -24,7 +24,7 @@ use std::io::Write;
 use std::net::TcpStream;
 
 use super::super::network::NetworkPacket;
-use super::{BufferWriter, Core, Transform, Vec3D};
+use super::{BufferWriter, Core, Transform};
 
 pub trait Player {
     fn set_uid(&mut self, id: usize);
@@ -36,7 +36,7 @@ pub trait Player {
     fn set_display_name(&mut self, _name: &str) {}
     fn get_display_name(&self) -> &str;
 
-    fn set_world(&mut self, map: &str) {}
+    fn set_world(&mut self, _map: &str) {}
     fn get_world(&self) -> &str {
         "main"
     }
@@ -157,11 +157,11 @@ impl Player for NetworkPlayer {
 
         if let Ok(sent_bytes) = self.stream.write(buffer.get_data()) {
             // TODO: Check writing and error of packet sending.
-            Core::static_log(&format!(
+            /*Core::static_log(&format!(
                 "Sent Packet ID \"{}\", \"{}\" bytes.",
                 packet.get_id(),
                 sent_bytes
-            ));
+            ));*/
         }
     }
 }
@@ -200,5 +200,5 @@ impl Player for Console {
         "&0Console"
     }
 
-    fn handle_packet(&mut self, packet: Box<dyn NetworkPacket>) {}
+    fn handle_packet(&mut self, _packet: Box<dyn NetworkPacket>) {}
 }

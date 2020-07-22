@@ -34,7 +34,7 @@ pub trait Map {
     fn get_spawnarea(&self) -> Vec3D {
         let size = self.get_size();
 
-        Vec3D::new(size.get_x() * 16, size.get_y() * 16, size.get_z() * 32) 
+        Vec3D::new(size.get_x() * 16, size.get_y() * 32, size.get_z() * 16) 
     }
 
     fn get_block(&self, position: &Vec3D) -> u8;

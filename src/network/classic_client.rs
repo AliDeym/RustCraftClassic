@@ -88,12 +88,14 @@ impl NetworkPacket for PlayerIdentification {
 
             let mut main_world = core.get_world_mut("main").unwrap(); // TODO: Give proper message (main does not exist.)
 
-            core.send_map(player.value_mut(), main_world.value_mut());
-
             Core::static_log(&format!(
                 "Player instantiated: {}",
                 player.get_display_name()
             ));
+
+            core.send_map(player, main_world.value_mut());
+
+            
         } // TODO: Handle case where player is not found or not instantiated.
     }
 }
@@ -151,6 +153,16 @@ impl NetworkPacket for PlayerSetBlock {
                 }
 
                 world.set_block(&self.position, self.block, destroy);
+
+                let sending_block = world.get_block(&self.position);
+
+                for pid in world.get_players() {
+                    if *pid != player.get_uid() {
+                        if let Some(mut other) = core.get_player_by_uid_mut(*pid) {
+                            other.handle_packet(Box::new(ServerSetBlock::new(self.position, sending_block)));
+                        }
+                    }
+                }
             }
 
             Core::static_log(&format!(
@@ -182,8 +194,8 @@ impl PlayerPositionAndOrientation {
         let y = buffer_reader.read_ushort();
         let z = buffer_reader.read_ushort();
 
-        let pitch = buffer_reader.read_byte();
         let yaw = buffer_reader.read_byte();
+        let pitch = buffer_reader.read_byte();
 
         
 
@@ -211,20 +223,23 @@ impl NetworkPacket for PlayerPositionAndOrientation {
 
     fn handle_receive(&self, core: &mut Core) {
         if let Some(mut player) = self.get_sender_mut(core) {
+            let pid = player.get_uid();
             let transform = player.get_transform_mut();
 
             transform.set_pos(self.x, self.y, self.z);
             transform.set_pitch(self.pitch);
             transform.set_yaw(self.yaw);
 
-            //println!("Player pos: {} {} {}", self.x, self.y, self.z);
+            let transform = transform.clone(); // Create a copied version cause we have modified it.
 
-            if let Some(mut world) = core.get_world_mut(player.get_world()) {
+            if let Some(world) = core.get_world_mut(player.get_world()) {
                 // TODO: Update player to the others.
                 for p in world.get_players() {
-                    if *p != player.get_uid() {
-                        if let Some(other) = core.get_player_by_uid(*p) {
+                    if *p != pid {
+                        if let Some(mut other) = core.get_player_by_uid_mut(*p) {
                             // TODO: Send transform of other player.
+                            
+                            other.handle_packet(Box::new(ServerPositionAndOrientation::new(pid as i8, transform.clone())));
                         }
                     }
                 }
