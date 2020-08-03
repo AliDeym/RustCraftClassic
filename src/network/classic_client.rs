@@ -93,7 +93,7 @@ impl NetworkPacket for PlayerIdentification {
                 player.get_display_name()
             ));
 
-            core.send_map(player, main_world.value_mut());
+            core.send_map(player, &mut main_world);
 
             
         } // TODO: Handle case where player is not found or not instantiated.
@@ -166,7 +166,7 @@ impl NetworkPacket for PlayerSetBlock {
             }
 
             Core::static_log(&format!(
-                "Player sent a block change: \n(Vec3D): ({}, {}, {})",
+                "Player {} sent a block change: \n(Vec3D): ({}, {}, {})", self.get_sender_uid(),
                 self.position.0, self.position.1, self.position.2
             ));
         } // TODO: Handle case where player is not found or not instantiated.
@@ -232,7 +232,7 @@ impl NetworkPacket for PlayerPositionAndOrientation {
 
             let transform = transform.clone(); // Create a copied version cause we have modified it.
 
-            if let Some(world) = core.get_world_mut(player.get_world()) {
+            if let Some(world) = core.get_world(player.get_world()) {
                 // TODO: Update player to the others.
                 for p in world.get_players() {
                     if *p != pid {

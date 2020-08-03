@@ -194,16 +194,22 @@ impl<'a> BufferReader<'a> {
         BufferReader { index: 0, buffer }
     }
 
+    pub fn get_index(&self) -> usize {
+        self.index
+    }
+
     pub fn read_byte(&mut self) -> u8 {
         self.index += 1;
 
-        *self.buffer.get(self.index - 1).unwrap_or(&0)
+        // In case we receive a timeout/packetloss, 0xff (255) will be returned.
+        *self.buffer.get(self.index - 1).unwrap_or(&0xff)
     }
 
     pub fn read_sbyte(&mut self) -> i8 {
         self.index += 1;
 
-        *self.buffer.get(self.index - 1).unwrap_or(&0) as i8
+        // In case of packet loss, 0xff (127) will be returned.
+        *self.buffer.get(self.index - 1).unwrap_or(&0xff) as i8
     }
 
     pub fn read_ushort(&mut self) -> u16 {

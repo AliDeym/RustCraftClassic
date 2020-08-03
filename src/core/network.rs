@@ -21,20 +21,17 @@
 */
 
 use std::io::{self, Read};
-use std::net::{TcpListener, TcpStream, Shutdown};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-
 use threadpool::ThreadPool;
 
-
 use super::super::network::*;
-use super::{Core, NetworkPlayer, PlayerList, BufferReader};
+use super::{BufferReader, Core, NetworkPlayer, PlayerList};
 
 const HOSTNAME: &str = "0.0.0.0";
 const TIMEOUT_TIME: u64 = 30; // in Seconds.
-
 
 pub struct Network {
     listener: TcpListener,
@@ -76,7 +73,7 @@ impl Network {
                             let players = players_arc.clone();
 
                             let mut found_id = 0;
-                            'search: for _ in 1..(std::i8::MAX) as usize -1 {
+                            'search: for _ in 1..(std::i8::MAX) as usize - 1 {
                                 found_id += 1;
 
                                 if players.contains_key(&(found_id as usize)) {
@@ -92,7 +89,7 @@ impl Network {
                             let tx = core_tx.clone();
 
                             self.net_workers.execute(move || {
-                                let mut buffer = vec![0; 256];
+                                let mut buffer = vec![0xff; 256];
 
                                 loop {
                                     match receiver.read(&mut buffer) {
@@ -101,57 +98,57 @@ impl Network {
                                                 // Connection has been closed.
                                                 // Inform the core of player's disconnecction so the proper action can be taken.
                                                 // TODO: Send a disconnect packet to core, with sender ID 0 (console). (Dispose NEEDED!)
-                                                Core::static_log(&format!("Player with uid \"{}\" disconnected.", uid_copy));
-                                                
-                                                
+                                                Core::static_log(&format!(
+                                                    "Player with uid \"{}\" disconnected.",
+                                                    uid_copy
+                                                ));
+
                                                 receiver.shutdown(Shutdown::Both).ok();
 
                                                 break;
                                             }
 
-                                            let result_opcode = buffer.get(0);
-
-                                            if let None = result_opcode {
-                                                //tx.send(Box::new())
-                                                // TODO: Send a disconnect packet to server, so it knows player has disconnected.
-                                                // which will drop the player.
-                                                // POTENTIAL RISK: Another player sending disconenct to the server
-                                                // causing other players to get kicked.
-                                                break;
-                                            }
-
-                                            let op_code = result_opcode.unwrap();
                                             let mut buffer_reader = BufferReader::new(&buffer);
-                                            // Ignore the first byte, as we already handle it with op_code variable.
-                                            buffer_reader.read_byte();
 
-                                            // Handle receiving packets here, and send objects to core.
-                                            // TODO: match should return a packet, send must be done outside the match.
-                                            match *op_code {
-                                                PlayerIdentification::ID => {
+                                            while buffer_reader.get_index() < size {
+                                                // Read the packet's op_code.
+                                                // TODO: Check the buffer for corrupt data.
+                                                let op_code = buffer_reader.read_byte();
 
-                                                    let identify_packet =
-                                                        PlayerIdentification::new(
+                                                // Handle receiving packets here, and send objects to core.
+                                                // TODO: match should return a packet, send must be done outside the match.
+                                                match op_code {
+                                                    PlayerIdentification::ID => {
+                                                        println!("SIZE: {}, BUFFER: {}", size, buffer_reader.get_index());
+                                                        let identify_packet =
+                                                            PlayerIdentification::new(
+                                                                &mut buffer_reader,
+                                                                player_uid,
+                                                            );
+
+                                                        tx.send(Box::new(identify_packet)).unwrap();
+                                                    }
+                                                    PlayerSetBlock::ID => {
+                                                        println!("ID {} sent a setblock with {} bytes data", player_uid, size);
+                                                        let setblock_packet = PlayerSetBlock::new(
                                                             &mut buffer_reader,
                                                             player_uid,
                                                         );
 
-                                                    
-
-                                                    tx.send(Box::new(identify_packet)).unwrap();
-                                                },
-                                                PlayerSetBlock::ID => {
-                                                    let setblock_packet = PlayerSetBlock::new(&mut buffer_reader, player_uid);
-
-                                                    tx.send(Box::new(setblock_packet)).unwrap();
-                                                },
-                                                PlayerPositionAndOrientation::ID => {
-                                                    let packet = PlayerPositionAndOrientation::new(&mut buffer_reader, player_uid);
-                                                    tx.send(Box::new(packet)).unwrap();
+                                                        tx.send(Box::new(setblock_packet)).unwrap();
+                                                    }
+                                                    PlayerPositionAndOrientation::ID => {
+                                                        let packet =
+                                                            PlayerPositionAndOrientation::new(
+                                                                &mut buffer_reader,
+                                                                player_uid,
+                                                            );
+                                                        tx.send(Box::new(packet)).unwrap();
+                                                    }
+                                                    _ => {}
                                                 }
-                                                _ => {}
+                                                //buffer.clear(); // Clean up the buffer after receiving a packet.
                                             }
-                                            //buffer.clear(); // Clean up the buffer after receiving a packet.
                                         }
                                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
                                         Err(e) => {

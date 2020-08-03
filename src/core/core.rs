@@ -28,17 +28,18 @@ use std::sync::{
 };
 use std::thread;
 
-use dashmap::mapref::one::{Ref, RefMut};
-use dashmap::DashMap;
+use chashmap::{CHashMap, WriteGuard, ReadGuard};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use num_cpus;
+use chrono::prelude::*;
+use chrono::Local;
 
 use super::super::network::*;
 use super::{Console, Network, Player, MemoryMap, Vec3D, World, Transform};
 
-pub type PlayerList = Arc<DashMap<usize, Box<dyn Player + Send + Sync>>>;
-pub type WorldList = Arc<DashMap<String, World>>;
+pub type PlayerList = Arc<CHashMap<usize, Box<dyn Player + Send + Sync>>>;
+pub type WorldList = Arc<CHashMap<String, World>>;
 
 pub struct Core {
     pub threadsize: usize,
@@ -60,11 +61,13 @@ impl Core {
             Core::static_log("Thread size cannot be 0 or less. Using default (# CPU Cores).");
         }
 
-        let players: PlayerList = Arc::new(DashMap::new());
+        Core::static_log(&format!("Initializing the core with '{}' threads...", threadsize));
+
+        let players: PlayerList = Arc::new(CHashMap::new());
 
         (*players).insert(0, Box::new(Console::new()));
 
-        let worlds: WorldList = Arc::new(DashMap::new());
+        let worlds: WorldList = Arc::new(CHashMap::new());
 
         (*worlds).insert(
             String::from("main"),
@@ -73,6 +76,8 @@ impl Core {
                 Box::new(MemoryMap::new(Vec3D::new(64, 16, 64))),
             ),
         );
+
+        Core::static_log("Core has ben set up, waiting for network.");
 
         Core {
             threadsize,
@@ -87,8 +92,8 @@ impl Core {
 
     /// Logs into the standard output as well as log file, without a core instance.
     pub fn static_log(message: &str) -> String {
-        // TODO: Insert time using chrono.
-        let log = format!("[{}] {}", "TIME-HERE", message);
+        let time_now = Local::now();
+        let log = format!("[{}] {}", time_now.format("%H:%M:%S"), message);
 
         println!("{}", &log);
 
@@ -160,7 +165,7 @@ impl Core {
     pub fn get_player_by_uid<'core>(
         &'core self,
         uid: usize,
-    ) -> Option<Ref<'_, usize, Box<dyn Player + Send + Sync>>> {
+    ) -> Option<ReadGuard<'_, usize, Box<dyn Player + Send + Sync>>> {
         if self.players.contains_key(&uid) {
             self.players.get(&uid)
         } else {
@@ -173,7 +178,7 @@ impl Core {
     pub fn get_player_by_uid_mut<'core>(
         &'core self,
         uid: usize,
-    ) -> Option<RefMut<'_, usize, Box<dyn Player + Send + Sync>>> {
+    ) -> Option<WriteGuard<usize, Box<dyn Player + Send + Sync>>> {
         if self.players.contains_key(&uid) {
             self.players.get_mut(&uid)
         } else {
@@ -181,7 +186,7 @@ impl Core {
         }
     }
 
-    pub fn get_world<'core>(&'core self, name: &str) -> Option<Ref<'_, String, World>> {
+    pub fn get_world<'core>(&'core self, name: &str) -> Option<ReadGuard<String, World>> {
         if self.worlds.contains_key(name) {
             self.worlds.get(name)
         } else {
@@ -189,7 +194,7 @@ impl Core {
         }
     }
 
-    pub fn get_world_mut<'core>(&'core self, name: &str) -> Option<RefMut<'_, String, World>> {
+    pub fn get_world_mut<'core>(&'core self, name: &str) -> Option<WriteGuard<String, World>> {
         if self.worlds.contains_key(name) {
             self.worlds.get_mut(name)
         } else {
@@ -197,7 +202,7 @@ impl Core {
         }
     }
 
-    pub fn send_map(&self, mut player: RefMut<'_, usize, Box<dyn Player + Send + Sync>>, map: &mut World) {
+    pub fn send_map(&self, mut player: WriteGuard<usize, Box<dyn Player + Send + Sync>>, map: &mut World) {
         if let Some(mut current_world) = self.get_world_mut(player.get_world()) {
             current_world.remove_player(player.get_uid());
 

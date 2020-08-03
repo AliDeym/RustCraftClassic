@@ -14,5 +14,6 @@ path = "src/main.rs"
 
 threadpool = "1.8"
 num_cpus = "1.13"
-dashmap = "3.11"
+chashmap = "2.2"
 flate2 = "1.0"
+chrono = "0.4"

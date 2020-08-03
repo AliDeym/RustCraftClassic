@@ -22,7 +22,7 @@
 
 use std::cmp::PartialEq;
 
-use dashmap::mapref::one::{Ref, RefMut};
+use chashmap::{ReadGuard, WriteGuard};
 
 use super::super::core::{BufferWriter, Core, Player};
 
@@ -32,13 +32,13 @@ pub trait NetworkPacket {
     
     fn get_sender_uid(&self) -> usize { 0 }
 
-    fn get_sender<'a>(&self, core: &'a Core) -> Option<Ref<'a, usize, Box<dyn Player + Send + Sync>>> {
+    fn get_sender<'a>(&'a self, core: &'a Core) -> Option<ReadGuard<usize, Box<dyn Player + Send + Sync>>> {
         let uid = self.get_sender_uid();
 
         core.get_player_by_uid(uid)
     }
 
-    fn get_sender_mut<'a>(&self, core: &'a Core) -> Option<RefMut<'a, usize, Box<dyn Player + Send + Sync>>> {
+    fn get_sender_mut<'a>(&'a self, core: &'a Core) -> Option<WriteGuard<usize, Box<dyn Player + Send + Sync>>> {
         let uid = self.get_sender_uid();
 
         core.get_player_by_uid_mut(uid)
