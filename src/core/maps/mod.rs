@@ -20,12 +20,8 @@
     SOFTWARE.
 */
 
-mod classic_client;
-mod classic_server;
-mod cpe;
-mod packet;
+mod mcsharp;
+mod memorymap;
 
-pub use self::classic_client::*;
-pub use self::classic_server::*;
-pub use self::cpe::*;
-pub use self::packet::*;
+pub use self::mcsharp::*;
+pub use self::memorymap::*;

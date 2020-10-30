@@ -20,7 +20,8 @@
     SOFTWARE.
 */
 
-use super::super::core::{BufferReader, Core, Vec3D};
+use super::super::core::events;
+use super::super::core::{BufferReader, Core, Player, Vec3D};
 use super::*;
 
 pub struct PlayerIdentification {
@@ -68,7 +69,12 @@ impl NetworkPacket for PlayerIdentification {
     fn handle_receive(&self, core: &mut Core) {
         if let Some(mut player) = self.get_sender_mut(core) {
             player.set_name(&self.username);
-            player.set_display_name(&self.username);
+            // TODO: Add actual ranks/colors. (Or option for it).
+            let color_code = {
+                "&7"
+            };
+
+            player.set_display_name(&format!("{}{}", color_code, &self.username));
 
             player.set_uid(self.get_sender_uid());
 
@@ -76,15 +82,12 @@ impl NetworkPacket for PlayerIdentification {
 
             let identify_packet = Box::new(ServerIdentification::new(
                 0x07,
-                String::from("Test"),
-                String::from("A Rust server! +hax"),
+                String::from("RustCraftClassic by Ali Deym (Rust <3)"),
+                String::from("RustCraftClassic by Ali Deym (Rust <3) +hax"),
                 0x00,
             ));
 
             player.handle_packet(identify_packet);
-
-            /*let map = Box::new(TestMap::new(Vec3D::new(32, 32, 32)));
-            let world = World::new(map);*/
 
             let mut main_world = core.get_world_mut("main").unwrap(); // TODO: Give proper message (main does not exist.)
 
@@ -93,19 +96,18 @@ impl NetworkPacket for PlayerIdentification {
                 player.get_display_name()
             ));
 
-            core.send_map(player, &mut main_world);
+            events::player::on_joined(core, player.as_mut());
 
-            
+            core.send_map_direct(player, &mut main_world);
         } // TODO: Handle case where player is not found or not instantiated.
     }
 }
-
 
 pub struct PlayerSetBlock {
     sender: usize,
     position: Vec3D,
     mode: u8,
-    block: u8
+    block: u8,
 }
 
 impl PlayerSetBlock {
@@ -124,7 +126,7 @@ impl PlayerSetBlock {
             sender,
             position: Vec3D::new(x, y, z),
             mode,
-            block
+            block,
         }
     }
 }
@@ -142,9 +144,7 @@ impl NetworkPacket for PlayerSetBlock {
     }
 
     fn handle_receive(&self, core: &mut Core) {
-        if let Some(player) = self.get_sender(core) {
-            // TODO: Make changes to actual map inside memory, to do so, we need to link player to map first.
-            println!("Player's world: {}", player.get_world());
+        if let Some(mut player) = self.get_sender_mut(core) {
             if let Some(mut world) = core.get_world_mut(player.get_world()) {
                 let mut destroy = false;
 
@@ -152,23 +152,36 @@ impl NetworkPacket for PlayerSetBlock {
                     destroy = true;
                 }
 
-                world.set_block(&self.position, self.block, destroy);
+                // Events did not block the placement/destroy of block:
+                if !events::world::on_setblock(
+                    core,
+                    player.as_mut(),
+                    &mut world,
+                    self.position,
+                    self.block,
+                    destroy,
+                ) {
+                    world.set_block(&self.position, self.block, destroy);
 
-                let sending_block = world.get_block(&self.position);
+                    let sending_block = world.get_block(&self.position);
 
-                for pid in world.get_players() {
-                    if *pid != player.get_uid() {
-                        if let Some(mut other) = core.get_player_by_uid_mut(*pid) {
-                            other.handle_packet(Box::new(ServerSetBlock::new(self.position, sending_block)));
+                    for pid in world.get_players() {
+                        if *pid != player.get_uid() {
+                            if let Some(mut other) = core.get_player_by_uid_mut(*pid) {
+                                other.handle_packet(Box::new(ServerSetBlock::new(
+                                    self.position,
+                                    sending_block,
+                                )));
+                            }
                         }
                     }
                 }
-            }
 
-            Core::static_log(&format!(
-                "Player {} sent a block change: \n(Vec3D): ({}, {}, {})", self.get_sender_uid(),
-                self.position.0, self.position.1, self.position.2
-            ));
+                let sending_block = world.get_block(&self.position);
+                // Player should receive the block no matter what.
+                // If the block is changed, they see the changes, otherwise they see the original.
+                player.handle_packet(Box::new(ServerSetBlock::new(self.position, sending_block)));
+            }
         } // TODO: Handle case where player is not found or not instantiated.
     }
 }
@@ -180,7 +193,7 @@ pub struct PlayerPositionAndOrientation {
     y: u16,
     z: u16,
     pitch: u8,
-    yaw: u8
+    yaw: u8,
 }
 
 impl PlayerPositionAndOrientation {
@@ -197,12 +210,12 @@ impl PlayerPositionAndOrientation {
         let yaw = buffer_reader.read_byte();
         let pitch = buffer_reader.read_byte();
 
-        
-
         PlayerPositionAndOrientation {
             sender,
             player_id,
-            x, y, z,
+            x,
+            y,
+            z,
             pitch,
             yaw,
         }
@@ -237,13 +250,66 @@ impl NetworkPacket for PlayerPositionAndOrientation {
                 for p in world.get_players() {
                     if *p != pid {
                         if let Some(mut other) = core.get_player_by_uid_mut(*p) {
-                            // TODO: Send transform of other player.
-                            
-                            other.handle_packet(Box::new(ServerPositionAndOrientation::new(pid as i8, transform.clone())));
+                            other.handle_packet(Box::new(ServerPositionAndOrientation::new(
+                                pid as i8,
+                                transform.clone(),
+                            )));
                         }
                     }
                 }
             }
         } // TODO: Handle case where player is not found or not instantiated.
+    }
+}
+
+pub struct PlayerMessage {
+    sender: usize,
+    unused: u8,
+    message: String,
+}
+
+impl PlayerMessage {
+    pub const ID: u8 = 0x0d;
+    pub const SIZE: usize = 66;
+
+    pub fn new(buffer_reader: &mut BufferReader, sender: usize) -> PlayerMessage {
+        let unused = buffer_reader.read_byte();
+        let message = buffer_reader.read_string();
+
+        PlayerMessage {
+            sender,
+            unused,
+            message,
+        }
+    }
+
+    pub fn get_message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl NetworkPacket for PlayerMessage {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn get_sender_uid(&self) -> usize {
+        self.sender
+    }
+
+    fn handle_receive(&self, core: &mut Core) {
+        if let Some(mut player) = self.get_sender_mut(core) {
+            let event_handled =
+                events::server::on_message(&core, &mut player, self.message.clone());
+
+            if !event_handled {
+                let gen_str = format!("{}: &f{}", player.get_display_name(), self.message);
+
+                core.broadcast_message(player.as_mut(), &gen_str);
+            }
+        }
     }
 }

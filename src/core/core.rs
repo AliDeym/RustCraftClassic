@@ -28,18 +28,23 @@ use std::sync::{
 };
 use std::thread;
 
-use chashmap::{CHashMap, WriteGuard, ReadGuard};
+use chashmap::{CHashMap, ReadGuard, WriteGuard};
+use chrono::prelude::*;
+use chrono::Local;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use num_cpus;
-use chrono::prelude::*;
-use chrono::Local;
 
 use super::super::network::*;
-use super::{Console, Network, Player, MemoryMap, Vec3D, World, Transform};
+use super::events;
+use super::maps::MCSharpMap;
+use super::{Console, Network, Player, Transform, Vec3D, World};
 
 pub type PlayerList = Arc<CHashMap<usize, Box<dyn Player + Send + Sync>>>;
 pub type WorldList = Arc<CHashMap<String, World>>;
+
+// Shortcut for easier event handling.
+pub type SyncPlayer<'ply> = &'ply mut (dyn Player + Send + Sync);
 
 pub struct Core {
     pub threadsize: usize,
@@ -61,7 +66,10 @@ impl Core {
             Core::static_log("Thread size cannot be 0 or less. Using default (# CPU Cores).");
         }
 
-        Core::static_log(&format!("Initializing the core with '{}' threads...", threadsize));
+        Core::static_log(&format!(
+            "Initializing the core with '{}' threads...",
+            threadsize
+        ));
 
         let players: PlayerList = Arc::new(CHashMap::new());
 
@@ -69,11 +77,19 @@ impl Core {
 
         let worlds: WorldList = Arc::new(CHashMap::new());
 
-        (*worlds).insert(
+        /*(*worlds).insert(
             String::from("main"),
             World::new(
                 String::from("main"),
                 Box::new(MemoryMap::new(Vec3D::new(64, 16, 64))),
+            ),
+        );*/
+        // Load main map from maps/main.lvl (MCSharp/MCLawl Format).
+        (*worlds).insert(
+            String::from("main"),
+            World::new(
+                String::from("main"),
+                Box::new(MCSharpMap::try_new("main").unwrap()),
             ),
         );
 
@@ -160,6 +176,33 @@ impl Core {
         self.tx.clone().unwrap()
     }
 
+    // TODO: Use better method for broadcasting packets.
+    pub fn broadcast_message(&self, sender: &mut (dyn Player), message: &str) {
+        // TODO: better iterating method.
+        for i in 0..128 {
+            if sender.get_uid() != i {
+                if let Some(mut ply) = self.get_player_by_uid_mut(i) {
+                    /*let packet =
+                        Box::new(Message::new(sender.get_uid() as i8, String::from(message)));
+
+                    ply.handle_packet(packet);*/
+                    ply.send_message(message);
+                }
+            }
+        }
+
+        // Sender receives directly.
+        /*let packet = Box::new(Message::new(sender.get_uid() as i8, String::from(message)));
+        sender.handle_packet(packet);*/
+        sender.send_message(message);
+    }
+
+    /// Removes player from concurrent list. DO NOT Call directly,
+    /// This method should only be invoked if the resources are disposed.
+    pub fn remove_player_by_uid(&mut self, player_id: usize) {
+        self.players.remove(&player_id);
+    }
+
     // TODO: Change player by_uid to get_player
     /// Returns a player reference by uid. UID 0 can be used to get 'Console'.
     pub fn get_player_by_uid<'core>(
@@ -202,16 +245,68 @@ impl Core {
         }
     }
 
-    pub fn send_map(&self, mut player: WriteGuard<usize, Box<dyn Player + Send + Sync>>, map: &mut World) {
+    pub fn get_world_count(&self) -> usize {
+        self.worlds.len()
+    }
+
+    pub fn try_load_map(&self, player: &mut (dyn Player), map_name: &str) -> bool {
+        self.broadcast_message(player, &format!("&8Loading map \"{}\"...", map_name));
+        let map = MCSharpMap::try_new(map_name);
+
+        if let Some(level) = map {
+            (*self.worlds).insert(
+                String::from(map_name),
+                World::new(String::from(map_name), Box::new(level)),
+            );
+
+            self.broadcast_message(
+                player,
+                &format!("&8Map \"{}\" has successfully loaded.", map_name),
+            );
+
+            true
+        } else {
+            player.send_message(&format!("&8Map \"{}\" does not exist.", map_name));
+
+            false
+        }
+    }
+
+    /// Sends map directly from a WriteGuard to a Dyn reference.
+    pub fn send_map_direct(
+        &self,
+        mut player: WriteGuard<usize, Box<dyn Player + Send + Sync>>,
+        map: &mut World,
+    ) {
+        self.send_map(player.as_mut(), map);
+    }
+
+    pub fn send_map(&self, player: &mut (dyn Player), map: &mut World) {
+        let mut players_currentworld_count = 0;
+        // Send the entity remove packet to all current players.
         if let Some(mut current_world) = self.get_world_mut(player.get_world()) {
             current_world.remove_player(player.get_uid());
 
-            for players in current_world.get_players() {
-                // TODO: Send entity remove packet to existing players.
+            for player_id in current_world.get_players() {
+                if *player_id != player.get_uid() {
+                    if let Some(mut ply) = self.get_player_by_uid_mut(*player_id) {
+                        let packet = Box::new(DespawnPlayer::new(player.get_uid() as i8));
+
+                        ply.handle_packet(packet);
+
+                        players_currentworld_count += 1;
+                    }
+                }
             }
         }
 
-        // TODO: Send actual map.
+        // Old-map should be unloaded.
+        if players_currentworld_count <= 0 {
+            if player.get_world() != "main" {
+                self.worlds.remove(player.get_world());
+            }
+        }
+
         map.add_player(player.get_uid());
         player.set_world(map.get_name());
 
@@ -244,26 +339,40 @@ impl Core {
             )));
         }
 
-        player.handle_packet(Box::new(LevelFinalize::new(
-            *map.get_size()
-        )));
+        player.handle_packet(Box::new(LevelFinalize::new(*map.get_size())));
 
         // TODO: Set spawn points for player, as well as send entity creation to players in world.
-        let transform = Transform::new(map.get_spawnarea(), 255, 0);
+        let transform = Transform::new(
+            map.get_spawnarea(),
+            map.get_spawnyaw(),
+            map.get_spawnpitch(),
+        );
         let name = String::from(player.get_display_name());
         let uid = player.get_uid();
 
         // Sending spawn area.
-        player.handle_packet(Box::new(SpawnPlayer::new(-1, name.clone(), transform.clone())));
+        player.handle_packet(Box::new(SpawnPlayer::new(
+            -1,
+            name.clone(),
+            transform.clone(),
+        )));
         //drop(player); // Dropping to stop deadlocks because we want to iterate through the list.
         for pid in map.get_players() {
             if *pid != uid {
                 if let Some(mut other) = self.get_player_by_uid_mut(*pid) {
                     // Let other players know about the joining player.
-                    other.handle_packet(Box::new(SpawnPlayer::new(uid as i8, name.clone(), transform.clone())));
+                    other.handle_packet(Box::new(SpawnPlayer::new(
+                        uid as i8,
+                        name.clone(),
+                        transform.clone(),
+                    )));
 
                     // Let the joining player now about the other(s).
-                    player.handle_packet(Box::new(SpawnPlayer::new(other.get_uid() as i8, String::from(other.get_display_name()), transform.clone())));
+                    player.handle_packet(Box::new(SpawnPlayer::new(
+                        other.get_uid() as i8,
+                        String::from(other.get_display_name()),
+                        transform.clone(),
+                    )));
                 }
             }
         }

@@ -23,7 +23,8 @@
 use std::io::Write;
 use std::net::TcpStream;
 
-use super::super::network::NetworkPacket;
+use super::super::network::{Message, NetworkPacket, ServerPositionAndOrientation};
+use super::events;
 use super::{BufferWriter, Core, Transform};
 
 pub trait Player {
@@ -44,6 +45,7 @@ pub trait Player {
     fn get_transform(&self) -> &Transform;
     fn get_transform_mut(&mut self) -> &mut Transform;
 
+    fn update_transform(&mut self, transform: Transform) {}
 
     fn is_console(&self) -> bool {
         false
@@ -52,6 +54,12 @@ pub trait Player {
     fn handle_packet(&mut self, packet: Box<dyn NetworkPacket>);
 
     fn kill(&mut self) {}
+    fn send_message(&mut self, message: &str) {
+        // Message sent to console.
+        Core::static_log(message);
+    }
+
+    fn try_join_world(&mut self, core: &Core, map: &str) {}
 }
 
 pub struct NetworkPlayer {
@@ -78,7 +86,7 @@ impl NetworkPlayer {
             username: default_name,
             world: String::from(""),
 
-            transform: Transform::default()
+            transform: Transform::default(),
         }
     }
 
@@ -118,6 +126,17 @@ impl Player for NetworkPlayer {
         &mut self.transform
     }
 
+    fn update_transform(&mut self, transform: Transform) {
+        // TODO: Remove double cloning.
+        self.transform = transform;
+
+        let packet = Box::new(ServerPositionAndOrientation::new(
+            -1,
+            self.transform.clone(),
+        ));
+
+        self.handle_packet(packet);
+    }
 
     fn set_name(&mut self, name: &str) {
         self.username = String::from(name);
@@ -145,6 +164,39 @@ impl Player for NetworkPlayer {
         println!("Player died.")
     }
 
+    fn send_message(&mut self, message: &str) {
+        let packet = Box::new(Message::new(0, String::from(message)));
+
+        self.handle_packet(packet);
+    }
+
+    fn try_join_world(&mut self, core: &Core, map: &str) {
+        // Map found:
+        if let Some(mut map) = core.get_world_mut(map) {
+            // Check events, false means event was not surpressed.
+            if !events::world::on_join(&core, self, &mut map) {
+                core.send_map(self, &mut map);
+
+                events::world::on_joined(&core, self, map);
+            }
+        } else {
+            // See if map exists in map folder, then try to load it.
+            if core.try_load_map(self, map) {
+                if let Some(mut map) = core.get_world_mut(map) {
+                    // Check events, false means event was not surpressed.
+                    if !events::world::on_join(&core, self, &mut map) {
+                        core.send_map(self, &mut map);
+
+                        events::world::on_joined(&core, self, map);
+                    }
+                }
+            } else {
+                // Map could not be loaded.
+                events::world::on_notfound(core, self, map);
+            }
+        }
+    }
+
     fn handle_packet(&mut self, packet: Box<dyn NetworkPacket>) {
         let buffer_size = packet.get_size();
         let packet_id = packet.get_id();
@@ -168,13 +220,13 @@ impl Player for NetworkPlayer {
 
 pub struct Console {
     // A position is needed for transform method, which does nothing actually though.
-    transform: Transform
+    transform: Transform,
 }
 
 impl Console {
     pub fn new() -> Console {
         Console {
-            transform: Transform::default()
+            transform: Transform::default(),
         }
     }
 }
@@ -186,7 +238,7 @@ impl Player for Console {
     fn get_transform_mut(&mut self) -> &mut Transform {
         &mut self.transform
     }
-    
+
     fn set_uid(&mut self, _id: usize) {}
     fn get_uid(&self) -> usize {
         0

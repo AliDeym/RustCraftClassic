@@ -22,12 +22,13 @@
 
 use std::io::{self, Read};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, Arc};
 use std::time::Duration;
 
 use threadpool::ThreadPool;
 
 use super::super::network::*;
+use super::events; // TODO: call disconnect event.
 use super::{BufferReader, Core, NetworkPlayer, PlayerList};
 
 const HOSTNAME: &str = "0.0.0.0";
@@ -105,7 +106,13 @@ impl Network {
 
                                                 receiver.shutdown(Shutdown::Both).ok();
 
-                                                break;
+                                                tx.send(Box::new(DisconnectPlayer::new(
+                                                    uid_copy,
+                                                    String::from("Server Disconnect"),
+                                                )))
+                                                .unwrap();
+
+                                                break; // TX clone should automatically be dropped by Rust's Ownership.
                                             }
 
                                             let mut buffer_reader = BufferReader::new(&buffer);
@@ -119,7 +126,6 @@ impl Network {
                                                 // TODO: match should return a packet, send must be done outside the match.
                                                 match op_code {
                                                     PlayerIdentification::ID => {
-                                                        println!("SIZE: {}, BUFFER: {}", size, buffer_reader.get_index());
                                                         let identify_packet =
                                                             PlayerIdentification::new(
                                                                 &mut buffer_reader,
@@ -129,7 +135,6 @@ impl Network {
                                                         tx.send(Box::new(identify_packet)).unwrap();
                                                     }
                                                     PlayerSetBlock::ID => {
-                                                        println!("ID {} sent a setblock with {} bytes data", player_uid, size);
                                                         let setblock_packet = PlayerSetBlock::new(
                                                             &mut buffer_reader,
                                                             player_uid,
@@ -143,6 +148,13 @@ impl Network {
                                                                 &mut buffer_reader,
                                                                 player_uid,
                                                             );
+                                                        tx.send(Box::new(packet)).unwrap();
+                                                    }
+                                                    PlayerMessage::ID => {
+                                                        let packet = PlayerMessage::new(
+                                                            &mut buffer_reader,
+                                                            player_uid,
+                                                        );
                                                         tx.send(Box::new(packet)).unwrap();
                                                     }
                                                     _ => {}

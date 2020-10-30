@@ -20,7 +20,7 @@
     SOFTWARE.
 */
 
-use super::super::core::{BufferWriter, Vec3D, Transform};
+use super::super::core::{events, BufferWriter, Core, Transform, Vec3D};
 use super::NetworkPacket;
 
 pub struct ServerIdentification {
@@ -124,7 +124,7 @@ impl NetworkPacket for LevelDataChunk {
 }
 
 pub struct LevelFinalize {
-    size: Vec3D
+    size: Vec3D,
 }
 
 impl LevelFinalize {
@@ -198,9 +198,9 @@ impl SpawnPlayer {
 
     pub fn new(player_id: i8, player_name: String, transform: Transform) -> SpawnPlayer {
         SpawnPlayer {
-            player_id, 
+            player_id,
             player_name,
-            transform
+            transform,
         }
     }
 }
@@ -222,10 +222,9 @@ impl NetworkPacket for SpawnPlayer {
     }
 }
 
-
 pub struct ServerPositionAndOrientation {
     player_id: i8,
-    transform: Transform
+    transform: Transform,
 }
 
 impl ServerPositionAndOrientation {
@@ -235,7 +234,7 @@ impl ServerPositionAndOrientation {
     pub fn new(player_id: i8, transform: Transform) -> ServerPositionAndOrientation {
         ServerPositionAndOrientation {
             player_id,
-            transform
+            transform,
         }
     }
 }
@@ -252,5 +251,124 @@ impl NetworkPacket for ServerPositionAndOrientation {
         buffer.write_sbyte(self.player_id);
 
         buffer.write_transform(&self.transform);
+    }
+}
+
+pub struct DespawnPlayer {
+    player_id: i8,
+}
+
+impl DespawnPlayer {
+    pub const ID: u8 = 0x0c;
+    pub const SIZE: usize = 2;
+
+    pub fn new(player_id: i8) -> DespawnPlayer {
+        DespawnPlayer { player_id }
+    }
+}
+
+impl NetworkPacket for DespawnPlayer {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_sbyte(self.player_id);
+    }
+}
+
+pub struct Message {
+    player_id: i8,
+    message: String,
+}
+
+impl Message {
+    pub const ID: u8 = 0x0d;
+    pub const SIZE: usize = 66;
+
+    pub fn new(player_id: i8, message: String) -> Message {
+        Message { player_id, message }
+    }
+}
+
+impl NetworkPacket for Message {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_sbyte(self.player_id);
+
+        buffer.write_string(&self.message);
+    }
+}
+
+pub struct DisconnectPlayer {
+    sender: usize,
+    reason: String,
+}
+
+impl DisconnectPlayer {
+    pub const ID: u8 = 0x0e;
+    pub const SIZE: usize = 65;
+
+    pub fn new(sender: usize, reason: String) -> DisconnectPlayer {
+        DisconnectPlayer { sender, reason }
+    }
+}
+
+impl NetworkPacket for DisconnectPlayer {
+    fn get_id(&self) -> u8 {
+        Self::ID
+    }
+    fn get_size(&self) -> usize {
+        Self::SIZE
+    }
+    fn get_sender_uid(&self) -> usize {
+        self.sender
+    }
+
+    fn handle_send(&self, buffer: &mut BufferWriter) {
+        buffer.write_string(&self.reason);
+    }
+
+    // Received from Network Thread.
+    fn handle_receive(&self, core: &mut Core) {
+        let mut player_id = 0;
+        let mut found = false;
+
+        if let Some(mut ply) = self.get_sender_mut(core) {
+            // Player is found.
+            player_id = ply.get_uid();
+            found = true;
+
+            if let Some(mut world) = core.get_world_mut(ply.get_world()) {
+                // Despawn player from others.
+                for ply_id in world.get_players() {
+                    if *ply_id != ply.get_uid() {
+                        if let Some(mut other) = core.get_player_by_uid_mut(*ply_id) {
+                            let packet = Box::new(DespawnPlayer::new(ply.get_uid() as i8));
+
+                            other.handle_packet(packet);
+                        }
+                    }
+                }
+
+                // Remove from current world.
+                world.remove_player(ply.get_uid());
+            }
+
+            // Send message to everyone else. At this point, player entity is still valid. (Network may not be available though).
+            events::player::on_left(core, ply.as_mut());
+        }
+
+        // Finally, remove from core (If player existed):
+        core.remove_player_by_uid(player_id);
     }
 }

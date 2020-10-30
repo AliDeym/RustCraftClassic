@@ -20,16 +20,33 @@
     SOFTWARE.
 */
 
-pub struct Vec3D<T=u16> (pub T, pub T, pub T) where T: Copy, T: Sized, T: Clone;
+pub fn math_min(num1: u8, num2: u8) -> u8 {
+    if num1 < num2 {
+        num1
+    } else {
+        num2
+    }
+}
+
+pub struct Vec3D<T = u16>(pub T, pub T, pub T)
+where
+    T: Copy,
+    T: Sized,
+    T: Clone;
 
 impl Clone for Vec3D {
     fn clone(&self) -> Self {
-        Self (self.0, self.1, self.2)
+        Self(self.0, self.1, self.2)
     }
 }
 impl Copy for Vec3D {}
 
-impl<T> Vec3D<T> where T: Copy, T: Sized, T: Clone {
+impl<T> Vec3D<T>
+where
+    T: Copy,
+    T: Sized,
+    T: Clone,
+{
     pub fn new(x: T, y: T, z: T) -> Vec3D<T> {
         Vec3D { 0: x, 1: y, 2: z }
     }
@@ -62,7 +79,7 @@ impl<T> Vec3D<T> where T: Copy, T: Sized, T: Clone {
 pub struct Transform {
     position: Vec3D,
     yaw: u8,
-    pitch: u8
+    pitch: u8,
 }
 
 impl Clone for Transform {
@@ -76,7 +93,7 @@ impl Transform {
         Transform {
             position,
             yaw,
-            pitch
+            pitch,
         }
     }
 
@@ -208,15 +225,36 @@ impl<'a> BufferReader<'a> {
     pub fn read_sbyte(&mut self) -> i8 {
         self.index += 1;
 
-        // In case of packet loss, 0xff (127) will be returned.
+        // In case we receive a timeout/packetloss, 0xff (255) will be returned.
         *self.buffer.get(self.index - 1).unwrap_or(&0xff) as i8
     }
 
     pub fn read_ushort(&mut self) -> u16 {
         let b1 = self.read_byte();
         let b2 = self.read_byte();
-        
+
         (b1 as u16) << 8 | b2 as u16
+    }
+
+    pub fn read_ushort_le(&mut self) -> u16 {
+        let b1 = self.read_byte();
+        let b2 = self.read_byte();
+
+        (b2 as u16) << 8 | b1 as u16
+    }
+
+    pub fn read_short(&mut self) -> i16 {
+        let b1 = self.read_byte();
+        let b2 = self.read_byte();
+
+        (b1 as i16) << 8 | b2 as i16
+    }
+
+    pub fn read_short_le(&mut self) -> i16 {
+        let b1 = self.read_byte();
+        let b2 = self.read_byte();
+
+        (b2 as i16) << 8 | b1 as i16
     }
 
     pub fn read_string(&mut self) -> String {
@@ -226,5 +264,11 @@ impl<'a> BufferReader<'a> {
         self.index += 64;
 
         String::from(grabbed.trim())
+    }
+
+    /// Reads to the end of the stream.
+    /// NOTE that this method will not change the buffer index.
+    pub fn read_to_end(&mut self) -> Vec<u8> {
+        self.buffer[self.index..self.buffer.len() - self.index + 1].to_vec()
     }
 }

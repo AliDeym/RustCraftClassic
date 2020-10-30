@@ -19,13 +19,9 @@
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 */
+use super::{Core, Player, SyncPlayer};
+use chashmap::WriteGuard;
 
-mod classic_client;
-mod classic_server;
-mod cpe;
-mod packet;
-
-pub use self::classic_client::*;
-pub use self::classic_server::*;
-pub use self::cpe::*;
-pub use self::packet::*;
+pub mod player;
+pub mod server;
+pub mod world;

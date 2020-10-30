@@ -26,19 +26,15 @@ use super::NetworkPacket;
 pub struct ExtInfo {
     sender: usize,
     app_name: String,
-    ext_count: u16
+    ext_count: u16,
 }
 
 impl ExtInfo {
-    pub fn new(
-        sender: usize,
-        app_name: String,
-        ext_count: u16
-    ) -> ExtInfo {
+    pub fn new(sender: usize, app_name: String, ext_count: u16) -> ExtInfo {
         ExtInfo {
             sender,
             app_name,
-            ext_count
+            ext_count,
         }
     }
 
@@ -49,7 +45,7 @@ impl ExtInfo {
         ExtInfo {
             sender,
             app_name,
-            ext_count
+            ext_count,
         }
     }
 }

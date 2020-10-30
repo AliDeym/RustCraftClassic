@@ -40,6 +40,5 @@ fn main() {
     //let main_receiver = core.take_receiver();
     core.network_listen();
 
-    
     core.handle_received_packets();
 }

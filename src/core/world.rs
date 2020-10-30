@@ -25,7 +25,7 @@ use super::{Map, Vec3D};
 pub struct World {
     name: String,
     players: Vec<usize>,
-    map: Box<dyn Map>
+    map: Box<dyn Map>,
 }
 
 impl World {
@@ -33,7 +33,7 @@ impl World {
         World {
             name,
             players: vec![],
-            map
+            map,
         }
     }
 
@@ -54,7 +54,9 @@ impl World {
             }
         }
 
-        if deleting_index <= 0 { return; }
+        if deleting_index <= 0 {
+            return;
+        }
 
         self.players.remove(deleting_index);
     }
@@ -87,6 +89,14 @@ impl World {
 
     pub fn get_spawnarea(&self) -> Vec3D {
         self.map.get_spawnarea()
+    }
+
+    pub fn get_spawnyaw(&self) -> u8 {
+        self.map.get_spawnyaw()
+    }
+
+    pub fn get_spawnpitch(&self) -> u8 {
+        self.map.get_spawnpitch()
     }
 
     // TODO: Add unload function to safely unload and save the map.

@@ -19,13 +19,37 @@
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 */
+use super::super::super::network::*;
+use super::super::{Core, Player};
+use chashmap::WriteGuard;
 
-mod classic_client;
-mod classic_server;
-mod cpe;
-mod packet;
+fn join_welcome(core: &Core, player: &mut (dyn Player), surpress: &mut bool) {
+    let nick = String::from(player.get_display_name());
 
-pub use self::classic_client::*;
-pub use self::classic_server::*;
-pub use self::cpe::*;
-pub use self::packet::*;
+    core.broadcast_message(player, &format!("{} &6has joined the server!", nick));
+}
+
+fn leave_goodbye(core: &Core, player: &mut (dyn Player), surpress: &mut bool) {
+    let nick = String::from(player.get_display_name());
+
+    core.broadcast_message(player, &format!("{} &6has left the server.", nick));
+}
+
+// Called after player joined the server.
+pub fn on_joined(core: &Core, player: &mut (dyn Player)) -> bool {
+    let mut surpress = false;
+
+    join_welcome(core, player, &mut surpress);
+
+    surpress
+}
+
+// Called after player left the server.
+// Player is valid, but network stream is not.
+pub fn on_left(core: &Core, player: &mut (dyn Player)) -> bool {
+    let mut surpress = false;
+
+    leave_goodbye(core, player, &mut surpress);
+
+    surpress
+}

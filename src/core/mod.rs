@@ -27,7 +27,13 @@ mod player;
 mod util;
 mod world;
 
+// Maps:
+mod maps;
+// Events:
+pub mod events;
+
 pub use self::core::*;
+pub use self::events::*;
 pub use self::map::*;
 pub use self::network::*;
 pub use self::player::*;
